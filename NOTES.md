@@ -1,4 +1,5 @@
-2026-06-12
-2026-06-12
-2026-06-12
-2026-06-12
+# Notes
+
+## Change Log
+
+- 2026-06-12: Initial acceptance run recorded (CMDC-0007b)
