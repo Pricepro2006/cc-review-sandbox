@@ -41,6 +41,21 @@ function Get-SupervisorData {
     return $Response
 }
 
+# HA 2026.8 rejects the REST /api/hassio/* proxy (401) even for the owner; the websocket
+# "supervisor/api" command is the supported path. ha-ws.ps1 writes the reply to -OutFile only.
+$script:HaWs = 'C:\Users\mrshr\Documents\homelab-tools\ha-ws.ps1'
+function Invoke-SupervisorApi {
+    param([string]$Endpoint, [string]$Method = 'get', [object]$Data)
+    $msg = @{ type = 'supervisor/api'; endpoint = $Endpoint; method = $Method }
+    if ($PSBoundParameters.ContainsKey('Data')) { $msg.data = $Data }
+    $outFile = Join-Path $script:EvidenceDir ("ws-{0}-{1}.json" -f (($Endpoint -replace '[^A-Za-z0-9]', '_').Trim('_')), (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+    & $script:HaWs -MsgJson ($msg | ConvertTo-Json -Compress -Depth 10) -OutFile $outFile | Out-Null
+    if (-not (Test-Path -LiteralPath $outFile)) { throw "ha-ws.ps1 did not write $outFile" }
+    $resp = Get-Content -LiteralPath $outFile -Raw | ConvertFrom-Json
+    if ($resp.success -ne $true) { throw ("supervisor/api {0} {1} failed: {2}" -f $Method, $Endpoint, ($resp | ConvertTo-Json -Compress -Depth 10)) }
+    return $resp.result
+}
+
 try {
     $config = Invoke-HaJson -Method GET -Path '/api/config'
     Add-Assertion -Name 'Home Assistant state is RUNNING' -Passed ([string]$config.state -eq 'RUNNING') -RawValue $config.state
@@ -72,11 +87,11 @@ try {
     }
     Add-Assertion -Name 'No automation triggered in the last 120 seconds' -Passed ($recentAutomations.Count -eq 0) -RawValue $recentAutomations
 
-    $supervisor = Get-SupervisorData -Response (Invoke-HaJson -Method GET -Path '/api/hassio/supervisor/info')
+    $supervisor = Invoke-SupervisorApi -Endpoint '/supervisor/info'
     Add-Assertion -Name 'Supervisor is healthy' -Passed ($supervisor.healthy -eq $true) -RawValue $supervisor.healthy
     Add-Assertion -Name 'Supervisor installation is supported' -Passed ($supervisor.supported -eq $true) -RawValue $supervisor.supported
 
-    $hostInfo = Get-SupervisorData -Response (Invoke-HaJson -Method GET -Path '/api/hassio/host/info')
+    $hostInfo = Invoke-SupervisorApi -Endpoint '/host/info'
     $diskFreeGb = [double]$hostInfo.disk_free
     Add-Assertion -Name 'Host has more than 2 GB free' -Passed ($diskFreeGb -gt 2.0) -RawValue ([pscustomobject]@{ disk_free_gb = $diskFreeGb; response = $hostInfo })
 

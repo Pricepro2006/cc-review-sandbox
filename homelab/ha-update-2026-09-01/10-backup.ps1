@@ -36,20 +36,34 @@ function Get-Data {
     return $Response
 }
 
+# HA 2026.8 rejects the REST /api/hassio/* proxy (401) even for the owner; the websocket
+# "supervisor/api" command is the supported path. ha-ws.ps1 writes the reply to -OutFile only.
+$script:HaWs = 'C:\Users\mrshr\Documents\homelab-tools\ha-ws.ps1'
+function Invoke-SupervisorApi {
+    param([string]$Endpoint, [string]$Method = 'get', [object]$Data)
+    $msg = @{ type = 'supervisor/api'; endpoint = $Endpoint; method = $Method }
+    if ($PSBoundParameters.ContainsKey('Data')) { $msg.data = $Data }
+    $outFile = Join-Path $script:EvidenceDir ("ws-{0}-{1}.json" -f (($Endpoint -replace '[^A-Za-z0-9]', '_').Trim('_')), (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+    & $script:HaWs -MsgJson ($msg | ConvertTo-Json -Compress -Depth 10) -OutFile $outFile | Out-Null
+    if (-not (Test-Path -LiteralPath $outFile)) { throw "ha-ws.ps1 did not write $outFile" }
+    $resp = Get-Content -LiteralPath $outFile -Raw | ConvertFrom-Json
+    if ($resp.success -ne $true) { throw ("supervisor/api {0} {1} failed: {2}" -f $Method, $Endpoint, ($resp | ConvertTo-Json -Compress -Depth 10)) }
+    return $resp.result
+}
+
 try {
-    $beforeResponse = Get-Data -Response (Invoke-HaJson -Method GET -Path '/api/hassio/backups')
+    $beforeResponse = Invoke-SupervisorApi -Endpoint '/backups'
     $beforeSlugs = @($beforeResponse.backups | ForEach-Object { [string]$_.slug })
 
-    $body = '{"name":"pre-hacs-update-2026-09-01","homeassistant":true,"folders":["share","ssl"],"compressed":true}'
-    $createResponse = Invoke-HaJson -Method POST -Path '/api/hassio/backups/new/partial' -BodyJson $body
-    $createData = Get-Data -Response $createResponse
+    $createData = Invoke-SupervisorApi -Endpoint '/backups/new/partial' -Method 'post' -Data @{ name = 'pre-hacs-update-2026-09-01'; homeassistant = $true; folders = @('share', 'ssl'); compressed = $true }
+    $createResponse = $createData
     $requestedSlug = $null
     if ($null -ne $createData.PSObject.Properties['slug']) { $requestedSlug = [string]$createData.slug }
     Add-Assertion -Name 'Partial backup request returned a slug' -Passed (-not [string]::IsNullOrWhiteSpace($requestedSlug)) -RawValue $createResponse
 
     $deadline = (Get-Date).AddMinutes(10)
     do {
-        $listResponse = Get-Data -Response (Invoke-HaJson -Method GET -Path '/api/hassio/backups')
+        $listResponse = Invoke-SupervisorApi -Endpoint '/backups'
         $candidates = @($listResponse.backups | Where-Object {
             ($requestedSlug -and [string]$_.slug -eq $requestedSlug) -or
             (([string]$_.name -eq 'pre-hacs-update-2026-09-01') -and ($beforeSlugs -notcontains [string]$_.slug))

@@ -64,8 +64,24 @@ try {
     }
 
     if (@($Assertions | Where-Object { -not $_.passed }).Count -eq 0) {
-        $restartResponse = Invoke-HaJson -Method POST -Path '/api/services/homeassistant/restart' -BodyJson '{}'
-        Add-Assertion -Name 'Home Assistant restart service call completed' -Passed $true -RawValue $restartResponse
+        # HA closes the HTTP connection while shutting down, so the restart POST usually raises
+        # "connection was closed" without a response. Treat that as the restart having fired;
+        # the went-offline wait below and 30-verify-core are the real gates.
+        $restartResponse = $null
+        $restartFired = $false
+        try {
+            $restartResponse = Invoke-HaJson -Method POST -Path '/api/services/homeassistant/restart' -BodyJson '{}'
+            $restartFired = $true
+        }
+        catch {
+            $msg = $_.Exception.Message
+            if ($msg -match 'connection was closed|connection that was expected to be kept alive|Unable to connect|actively refused') {
+                $restartFired = $true
+                $restartResponse = [pscustomobject]@{ note = 'restart POST returned no response (HA closed the connection while shutting down)'; error = $msg }
+            }
+            else { throw }
+        }
+        Add-Assertion -Name 'Home Assistant restart service call fired' -Passed $restartFired -RawValue $restartResponse
 
         # Wait (bounded, 2 min) until the API actually goes away so 30-verify-core cannot race the old process.
         $wentDown = $false

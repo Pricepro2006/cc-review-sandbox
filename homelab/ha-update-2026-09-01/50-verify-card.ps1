@@ -34,7 +34,11 @@ function Compare-JsonValue {
     $beforeIsObject = $Before -is [pscustomobject]
     $afterIsObject = $After -is [pscustomobject]
     if ($beforeIsObject -and $afterIsObject) {
-        $names = @(@($Before.PSObject.Properties.Name) + @($After.PSObject.Properties.Name) | Sort-Object -Unique)
+        # StrictMode: an empty PSObject's Properties collection has no .Name member; enumerate explicitly.
+        $nameList = New-Object System.Collections.ArrayList
+        foreach ($p in $Before.PSObject.Properties) { [void]$nameList.Add($p.Name) }
+        foreach ($p in $After.PSObject.Properties) { [void]$nameList.Add($p.Name) }
+        $names = @($nameList | Sort-Object -Unique)
         foreach ($name in $names) {
             $beforeProperty = $Before.PSObject.Properties[$name]
             $afterProperty = $After.PSObject.Properties[$name]
