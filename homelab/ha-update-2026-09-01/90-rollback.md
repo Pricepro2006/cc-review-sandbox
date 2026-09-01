@@ -72,3 +72,5 @@ Confirm with the operator before using this last-resort rollback. The `unused1` 
 ## Correction (FableGate review 2026-09-01)
 
 `qm rollback 105 pre-hacs-2026-09-01` leaves the VM **stopped**. Follow with `qm start 105` (or add `--start` if the host's `qm` supports it) and then wait for `http://10.0.0.50:8123/api/config` to report `RUNNING`. Recorder history since the snapshot is lost; this remains the last resort.
+
+**Dashboard restore guard (FableGate round 2, NEW-MED-1):** a `lovelace-<x>-before.json` may be a websocket *error envelope* (`success:false`, `error.code: config_not_found`) for an auto-generated or YAML-mode dashboard — `40-update-card.ps1` tolerates that on purpose. **Never send such a dump to `lovelace/config/save`**: it would convert the dashboard into a storage dashboard whose config is the error object. Before restoring any dump, check `success -eq $true` and that a `result` property exists; skip the file otherwise.
