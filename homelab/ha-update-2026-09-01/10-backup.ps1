@@ -74,13 +74,23 @@ try {
     }
 
     if (@($Assertions | Where-Object { -not $_.passed }).Count -eq 0) {
-        $snapshotOutput = @(& wsl -- ssh root@10.0.0.101 "qm snapshot 105 pre-hacs-2026-09-01 --description 'before HACS updates'" 2>&1)
-        $snapshotExitCode = $LASTEXITCODE
+        # Native commands: in Windows PowerShell 5.1, stderr merged via 2>&1 under EAP=Stop raises NativeCommandError
+        # even on success (ssh/wsl banners). Relax EAP around the two native calls only; exit codes still gate.
+        $savedEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $snapshotOutput = @(& wsl -- ssh root@10.0.0.101 "qm snapshot 105 pre-hacs-2026-09-01 --description 'before HACS updates'" 2>&1 | ForEach-Object { [string]$_ })
+            $snapshotExitCode = $LASTEXITCODE
+            $listOutput = @(& wsl -- ssh root@10.0.0.101 'qm listsnapshot 105' 2>&1 | ForEach-Object { [string]$_ })
+            $listExitCode = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $savedEap
+        }
         Add-Assertion -Name 'Proxmox VM snapshot command succeeded' -Passed ($snapshotExitCode -eq 0) -RawValue ([pscustomobject]@{ exit_code = $snapshotExitCode; output = $snapshotOutput; snapshot = $SnapshotName })
 
-        $listOutput = @(& wsl -- ssh root@10.0.0.101 'qm listsnapshot 105' 2>&1)
-        $listExitCode = $LASTEXITCODE
-        $snapshotListed = $listExitCode -eq 0 -and (($listOutput -join "`n") -match ('(?m)^\s*' + [regex]::Escape($SnapshotName) + '(\s|$)'))
+        # qm listsnapshot prints tree lines like "`-> pre-hacs-2026-09-01  <date>  <desc>"; match the name as a whole token anywhere.
+        $snapshotListed = $listExitCode -eq 0 -and (($listOutput -join "`n") -match ('(?m)(^|\s)' + [regex]::Escape($SnapshotName) + '(\s|$)'))
         Add-Assertion -Name 'Proxmox snapshot is listed for VM 105' -Passed $snapshotListed -RawValue ([pscustomobject]@{ exit_code = $listExitCode; output = $listOutput; snapshot = $SnapshotName })
     }
     else {

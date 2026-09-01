@@ -34,7 +34,7 @@ function Compare-JsonValue {
     $beforeIsObject = $Before -is [pscustomobject]
     $afterIsObject = $After -is [pscustomobject]
     if ($beforeIsObject -and $afterIsObject) {
-        $names = @($Before.PSObject.Properties.Name + $After.PSObject.Properties.Name | Sort-Object -Unique)
+        $names = @(@($Before.PSObject.Properties.Name) + @($After.PSObject.Properties.Name) | Sort-Object -Unique)
         foreach ($name in $names) {
             $beforeProperty = $Before.PSObject.Properties[$name]
             $afterProperty = $After.PSObject.Properties[$name]
@@ -88,9 +88,9 @@ try {
 
     $upgradeFailures = New-Object System.Collections.ArrayList
     foreach ($afterFile in $afterFiles) {
-        $matches = @(Select-String -LiteralPath $afterFile.FullName -SimpleMatch '__UPGRADE_FAILURE__')
-        if ($matches.Count -gt 0) {
-            [void]$upgradeFailures.Add([pscustomobject]@{ file = $afterFile.FullName; matches = $matches.Line })
+        $failureHits = @(Select-String -LiteralPath $afterFile.FullName -SimpleMatch '__UPGRADE_FAILURE__')
+        if ($failureHits.Count -gt 0) {
+            [void]$upgradeFailures.Add([pscustomobject]@{ file = $afterFile.FullName; matches = $failureHits.Line })
         }
 
         $beforeName = $afterFile.Name -replace '-after\.json$', '-before.json'
@@ -115,8 +115,11 @@ try {
     }
 
     $resourceFile = Join-Path $EvidenceDir 'lovelace-resources.json'
-    $resourceText = & $HaWs -MsgJson '{"type":"lovelace/resources"}' -OutFile $resourceFile
-    $resourceResponse = $resourceText | ConvertFrom-Json
+    # ha-ws.ps1 emits only via Write-Host and writes the raw response to -OutFile; read it back from the file.
+    if (Test-Path -LiteralPath $resourceFile) { Remove-Item -LiteralPath $resourceFile -Force }
+    & $HaWs -MsgJson '{"type":"lovelace/resources"}' -OutFile $resourceFile | Out-Null
+    if (-not (Test-Path -LiteralPath $resourceFile)) { throw "ha-ws.ps1 did not write $resourceFile" }
+    $resourceResponse = Get-Content -LiteralPath $resourceFile -Raw | ConvertFrom-Json
     $resources = @(Get-WsResult -Response $resourceResponse)
     $matchingResources = @($resources | Where-Object {
         $url = [string]$_.url

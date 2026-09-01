@@ -36,8 +36,9 @@ try {
     $deadline = (Get-Date).AddMinutes(15)
     do {
         try {
-            $lastApiResult = Invoke-HaJson -Method GET -Path '/api/'
-            $apiReady = [string]$lastApiResult.message -eq 'API running.'
+            # /api/config reports state RUNNING only once startup has completed (not STARTING); also pin the version.
+            $lastApiResult = Invoke-HaJson -Method GET -Path '/api/config'
+            $apiReady = ([string]$lastApiResult.state -eq 'RUNNING') -and ([string]$lastApiResult.version -eq '2026.8.3')
         }
         catch {
             $lastApiResult = [pscustomobject]@{ error = ($_ | Out-String) }
@@ -45,7 +46,7 @@ try {
         if ($apiReady) { break }
         Start-Sleep -Seconds 10
     } while ((Get-Date) -lt $deadline)
-    Add-Assertion -Name 'Home Assistant API returned API running within 15 minutes' -Passed $apiReady -RawValue $lastApiResult
+    Add-Assertion -Name 'Home Assistant /api/config reported state RUNNING on version 2026.8.3 within 15 minutes' -Passed $apiReady -RawValue $lastApiResult
 
     if ($apiReady) {
         Start-Sleep -Seconds 30
@@ -55,7 +56,7 @@ try {
 
         $criticalDomains = @('frigate', 'cloudplus', 'mqtt', 'zha', 'tplink', 'proxmoxve', 'hacs')
         foreach ($domain in $criticalDomains) {
-            $entries = @($ConfigEntries | Where-Object { [string]$_.domain -eq $domain })
+            $entries = @($ConfigEntries | Where-Object { [string]$_.domain -eq $domain -and $null -eq $_.disabled_by })
             $loaded = $entries.Count -gt 0 -and @($entries | Where-Object { [string]$_.state -ne 'loaded' }).Count -eq 0
             Add-Assertion -Name ("Critical integration is loaded: {0}" -f $domain) -Passed $loaded -RawValue $entries
         }

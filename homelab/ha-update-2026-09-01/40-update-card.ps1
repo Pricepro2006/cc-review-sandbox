@@ -32,7 +32,11 @@ function Invoke-HaJson {
 
 function Invoke-HaWsJson {
     param([string]$MsgJson, [string]$OutFile)
-    $jsonText = & $script:HaWs -MsgJson $MsgJson -OutFile $OutFile
+    # ha-ws.ps1 emits only via Write-Host and writes the raw response to -OutFile; read it back from the file.
+    if (Test-Path -LiteralPath $OutFile) { Remove-Item -LiteralPath $OutFile -Force }
+    & $script:HaWs -MsgJson $MsgJson -OutFile $OutFile | Out-Null
+    if (-not (Test-Path -LiteralPath $OutFile)) { throw "ha-ws.ps1 did not write $OutFile" }
+    $jsonText = Get-Content -LiteralPath $OutFile -Raw
     return ($jsonText | ConvertFrom-Json)
 }
 
@@ -85,7 +89,13 @@ function Dump-Dashboards {
             $message = @{ type = 'lovelace/config'; url_path = $urlPath; force = $true } | ConvertTo-Json -Compress
         }
         $configResponse = Invoke-HaWsJson -MsgJson $message -OutFile $outFile
-        Add-Assertion -Name ("Lovelace dashboard dumped ({0}): {1}" -f $Stage, $safeName) -Passed (Test-WsSuccess -Response $configResponse) -RawValue ([pscustomobject]@{ url_path = $urlPath; file = $outFile; response = $configResponse })
+        # Auto-generated or YAML-mode dashboards have no stored config: HA answers success:false / config_not_found.
+        # That is not a failure — record it and continue (there is nothing to back up or roll back for that dashboard).
+        $dumpOk = Test-WsSuccess -Response $configResponse
+        if (-not $dumpOk -and $null -ne $configResponse.PSObject.Properties['error'] -and [string]$configResponse.error.code -eq 'config_not_found') {
+            $dumpOk = $true
+        }
+        Add-Assertion -Name ("Lovelace dashboard dumped or confirmed non-storage ({0}): {1}" -f $Stage, $safeName) -Passed $dumpOk -RawValue ([pscustomobject]@{ url_path = $urlPath; file = $outFile; response = $configResponse })
 
         $existing = @($script:DashboardDumps | Where-Object { $_.name -eq $safeName }) | Select-Object -First 1
         if ($null -eq $existing) {

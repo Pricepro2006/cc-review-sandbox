@@ -82,3 +82,12 @@ The card phase also creates:
 - `lovelace-resources.json`
 
 Retain all evidence and dashboard dumps together. Never include secrets or tokens in operator notes; the helpers own authentication.
+
+
+## FableGate review corrections (2026-09-01, applied by operator session)
+
+- `10-backup.ps1`: `qm listsnapshot` tree-format regex fixed; native `wsl/ssh` calls run with EAP=Continue so 5.1's `2>&1` NativeCommandError cannot mask a successful snapshot.
+- `20-update-integrations.ps1`: after requesting the restart, waits (max 2 min) until `/api/config` stops answering, so `30` can never race the old process.
+- `30-verify-core.ps1`: readiness now means `/api/config` state `RUNNING` **and** version `2026.8.3` (not `/api/` "API running."); disabled config entries are excluded from the critical-domain check.
+- `40-update-card.ps1` / `50-verify-card.ps1`: `ha-ws.ps1` output is read back from `-OutFile` (the helper never writes to the success stream); `config_not_found` for auto-generated/YAML dashboards is tolerated; object-diff single-property bug fixed.
+- **Important caveat for Phase 2:** the Advanced Camera Card v8 `triggers:/conditions:/actions:` migration and any `__UPGRADE_FAILURE__` marker are produced **client-side when the card renders**; installing the card does not rewrite stored Lovelace config. Expect the before/after diff to be empty. The dumps remain the rollback baseline. **The migration must be verified in a browser**: hard-refresh (Ctrl+F5) each dashboard that uses the card, open every card with `automations:` configured, and look for the upgrade-failure banner. The HACS resource URL (`?hacstag=`) does not encode the version, so `50`'s resource check confirms presence, not version — the installed version assertion in `40` is the authoritative check.

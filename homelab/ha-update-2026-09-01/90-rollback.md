@@ -67,3 +67,8 @@ wsl -- ssh root@10.0.0.101 "qm rollback 105 pre-hacs-2026-09-01"
 ```
 
 Confirm with the operator before using this last-resort rollback. The `unused1` old disk retained from the 2026-08-17 cutover is the deep fallback and must never be deleted.
+
+
+## Correction (FableGate review 2026-09-01)
+
+`qm rollback 105 pre-hacs-2026-09-01` leaves the VM **stopped**. Follow with `qm start 105` (or add `--start` if the host's `qm` supports it) and then wait for `http://10.0.0.50:8123/api/config` to report `RUNNING`. Recorder history since the snapshot is lost; this remains the last resort.

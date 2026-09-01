@@ -66,6 +66,16 @@ try {
     if (@($Assertions | Where-Object { -not $_.passed }).Count -eq 0) {
         $restartResponse = Invoke-HaJson -Method POST -Path '/api/services/homeassistant/restart' -BodyJson '{}'
         Add-Assertion -Name 'Home Assistant restart service call completed' -Passed $true -RawValue $restartResponse
+
+        # Wait (bounded, 2 min) until the API actually goes away so 30-verify-core cannot race the old process.
+        $wentDown = $false
+        $downDeadline = (Get-Date).AddMinutes(2)
+        do {
+            Start-Sleep -Seconds 3
+            try { [void](Invoke-HaJson -Method GET -Path '/api/config') }
+            catch { $wentDown = $true }
+        } while (-not $wentDown -and (Get-Date) -lt $downDeadline)
+        Add-Assertion -Name 'Home Assistant API went offline after restart request (within 2 min)' -Passed $wentDown -RawValue ([pscustomobject]@{ went_down = $wentDown; observed_at = (Get-Date).ToUniversalTime().ToString('o') })
     }
     else {
         Add-Assertion -Name 'Restart is gated on successful integration updates' -Passed $false -RawValue 'Restart not requested because a precondition or update assertion failed.'
