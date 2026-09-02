@@ -107,8 +107,16 @@ function Dump-Dashboards {
 }
 
 try {
-    # The before dump is deliberately the first remote operation in this script.
-    Dump-Dashboards -Stage 'before'
+    # The before dumps are the rollback baseline (90-rollback.md) and Invoke-HaWsJson delete-then-rewrites,
+    # so a re-run must never overwrite them with post-update config. Mirror 10-backup's constant-name
+    # refusal: if any lovelace-*-before.json already exists in the evidence dir, refuse and stop here.
+    $priorBefore = @(Get-ChildItem -LiteralPath $EvidenceDir -Filter 'lovelace-*-before.json' -File | Select-Object -ExpandProperty Name)
+    Add-Assertion -Name 'No prior before-dumps in evidence dir (rollback baseline is never overwritten)' -Passed ($priorBefore.Count -eq 0) -RawValue ([pscustomobject]@{ evidence_dir = $EvidenceDir; existing = $priorBefore })
+
+    if (@($Assertions | Where-Object { -not $_.passed }).Count -eq 0) {
+        # The before dump is deliberately the first remote operation in this script.
+        Dump-Dashboards -Stage 'before'
+    }
 
     if (@($Assertions | Where-Object { -not $_.passed }).Count -eq 0) {
         $target = Invoke-HaJson -Method GET -Path '/api/states/update.advanced_camera_card_update'

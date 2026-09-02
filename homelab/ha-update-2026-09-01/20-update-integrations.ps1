@@ -67,6 +67,10 @@ try {
         # HA closes the HTTP connection while shutting down, so the restart POST usually raises
         # "connection was closed" without a response. Treat that as the restart having fired;
         # the went-offline wait below and 30-verify-core are the real gates.
+        # Only socket-dropped-mid-request messages count. "Unable to connect" / "actively refused"
+        # are TCP connect failures (the POST never left the workstation) and MUST rethrow, otherwise a
+        # workstation-side network fault reads as a fired restart and 30-verify-core (which has no
+        # restart proof: HACS sets installed_version at download time) would pass on the old process.
         $restartResponse = $null
         $restartFired = $false
         try {
@@ -75,7 +79,7 @@ try {
         }
         catch {
             $msg = $_.Exception.Message
-            if ($msg -match 'connection was closed|connection that was expected to be kept alive|Unable to connect|actively refused') {
+            if ($msg -match 'connection was closed|connection that was expected to be kept alive') {
                 $restartFired = $true
                 $restartResponse = [pscustomobject]@{ note = 'restart POST returned no response (HA closed the connection while shutting down)'; error = $msg }
             }
