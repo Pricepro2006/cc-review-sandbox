@@ -10,6 +10,7 @@ Use the least disruptive rollback that addresses the failure. Preserve the entir
    ```powershell
    $EvidenceDir = 'C:\Users\mrshr\tmp\ha-update'
    $HaWs = 'C:\Users\mrshr\Documents\homelab-tools\ha-ws.ps1'
+   $ErrorActionPreference = 'Stop'   # a missing before_file must throw, not print a false SKIP
    # Only a PASSED 40 run holds a trustworthy before-dump mapping; a failed re-run may be newer.
    $run = Get-ChildItem -LiteralPath $EvidenceDir -Filter '40-update-card-*.json' -File |
        Sort-Object LastWriteTime -Descending |
@@ -55,6 +56,7 @@ Use the partial-backup slug recorded by `10-backup-*.json`. Restoring the Home A
 ```powershell
 $EvidenceDir = 'C:\Users\mrshr\tmp\ha-update'
 $HaRest = 'C:\Users\mrshr\Documents\homelab-tools\ha-rest.ps1'
+$ErrorActionPreference = 'Stop'
 $KnownSlug = '82373c64'   # pre-hacs-update-2026-09-01 partial backup taken by the 2026-09-01 run
 # A re-run of 10-backup creates a fresh POST-update backup before failing on the existing snapshot name,
 # so the newest evidence file can carry the WRONG slug. Use only a PASSED run, and require it to match the known slug.
